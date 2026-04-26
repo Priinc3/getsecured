@@ -53,15 +53,109 @@ def load_yolo():
 @st.cache_resource
 def load_face_engine():
     return FaceEngine()
-
 # Sidebar Navigation
 with st.sidebar:
     st.title("🛡️ Investigator")
-    page = st.radio("Navigation", ["🔍 General Detection", "👤 Biometrics", "📁 Known Faces"])
+    page = st.radio("Navigation", ["🔍 General Detection", "🎬 Video Analysis", "👤 Biometrics", "📁 Known Faces"])
     st.divider()
-    
+
     if st.button("🔄 Refresh Models"):
-        st.cache_resource.clear()
+...
+# --- PAGE: VIDEO ANALYSIS ---
+elif page == "🎬 Video Analysis":
+    st.title("Automated Video Investigation")
+    st.write("Process long footage and extract significant events.")
+
+    uploaded_video = st.file_uploader("Upload Video File", type=["mp4", "avi", "mov"])
+
+    col_settings, _ = st.columns([1, 2])
+    with col_settings:
+        interval = st.slider("Analyze every (seconds)", min_value=0.5, max_value=10.0, value=2.0, step=0.5)
+
+    if uploaded_video:
+        # Save temp video to read with OpenCV
+        tfile = "data/videos/temp_upload.mp4"
+        with open(tfile, "wb") as f:
+            f.write(uploaded_video.getbuffer())
+
+        st.video(uploaded_video)
+
+        if st.button("🚀 Start Processing"):
+            cap = cv2.VideoCapture(tfile)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = total_frames / fps
+
+            st.info(f"Video length: {duration:.2f}s | Sampling every {interval}s")
+
+            # Models
+            yolo = load_yolo()
+            face_eng = load_face_engine()
+
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+
+            # Results Container
+            results_container = st.container()
+
+            frame_step = int(fps * interval)
+            count = 0
+
+            for fno in range(0, total_frames, frame_step):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, fno)
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                timestamp = fno / fps
+                status_text.text(f"Processing frame at {timestamp:.1f}s...")
+
+                # Analysis
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                res = yolo.predict(frame_rgb, conf=0.15, verbose=False)
+
+                # Check for significant objects (person, face, knife, gun)
+                found_interesting = False
+                for box in res[0].boxes:
+                    label = yolo.names[int(box.cls[0])]
+                    if label in ["person", "face", "knife", "gun"]:
+                        found_interesting = True
+                        break
+
+                if found_interesting:
+                    # Run Face ID
+                    faces = face_eng.identify(frame)
+
+                    # Plot
+                    res_plotted = res[0].plot()
+                    for loc, name in faces:
+                        top, right, bottom, left = loc
+                        cv2.rectangle(res_plotted, (left, top), (right, bottom), (139, 0, 255), 3)
+                        cv2.putText(res_plotted, f"ID: {name}", (left, bottom + 25), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (139, 0, 255), 2)
+
+                    with results_container:
+                        st.markdown(f"#### 🚩 Event at {timestamp:.1f}s")
+                        c1, c2 = st.columns([2, 1])
+                        with c1:
+                            st.image(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB), use_container_width=True)
+                        with c2:
+                            # Show Identities
+                            if faces:
+                                for _, name in faces:
+                                    st.success(f"Recognized: {name}")
+                            # Show Summary
+                            labels = [yolo.names[int(b.cls[0])] for b in res[0].boxes]
+                            st.write(f"Detected: {', '.join(set(labels))}")
+                        st.divider()
+
+                progress_bar.progress(min(fno / total_frames, 1.0))
+
+            cap.release()
+            st.success("Analysis Complete!")
+
+# --- PAGE: BIOMETRICS ---
+
         st.success("Cache cleared!")
         st.rerun()
         
