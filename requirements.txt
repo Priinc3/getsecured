@@ -1,0 +1,8 @@
+streamlit
+ultralytics
+opencv-python
+face_recognition
+ollama
+chromadb
+sentence-transformers
+langgraph

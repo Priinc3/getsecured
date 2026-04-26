@@ -1,0 +1,251 @@
+import streamlit as st
+import cv2
+import os
+import numpy as np
+from PIL import Image
+from ultralytics import YOLOWorld
+from face_engine import FaceEngine
+
+# Page configuration
+st.set_page_config(
+    page_title="CCTV Smart Investigator",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Custom Styling (Antigravity White Theme)
+st.markdown("""
+    <style>
+    .main { background-color: #f9fafb; }
+    .stButton>button {
+        background-color: #111827;
+        color: white;
+        border-radius: 8px;
+        transition: all 0.2s ease-in-out;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        background-color: #111827;
+        color: white;
+    }
+    .card {
+        background-color: white;
+        padding: 24px;
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    h1, h2, h3 { color: #111827; font-family: 'Inter', sans-serif; }
+    </style>
+""", unsafe_allow_html=True)
+
+# Helper: Load Models
+@st.cache_resource
+def load_yolo():
+    if os.path.exists("models/custom_yolo_world.pt"):
+        return YOLOWorld("models/custom_yolo_world.pt")
+    model = YOLOWorld("yolov8m-worldv2.pt")
+    model.set_classes(["face", "car", "bicycle", "motorcycle", "person", "cell phone", "laptop", "knife", "gun"])
+    return model
+
+@st.cache_resource
+def load_face_engine():
+    return FaceEngine()
+
+# Sidebar Navigation
+with st.sidebar:
+    st.title("🛡️ Investigator")
+    page = st.radio("Navigation", ["🔍 General Detection", "👤 Biometrics", "📁 Known Faces"])
+    st.divider()
+    
+    if st.button("🔄 Refresh Models"):
+        st.cache_resource.clear()
+        st.success("Cache cleared!")
+        st.rerun()
+        
+    st.info("MVP v0.1.0 - Local AI Engine")
+
+# --- PAGE: GENERAL DETECTION ---
+if page == "🔍 General Detection":
+    st.title("General Object Detection & Identification")
+    st.write("Detect objects and identify known faces in a single pass.")
+    
+    uploaded_file = st.file_uploader("Upload an image or frame...", type=["jpg", "png", "jpeg"])
+    
+    if uploaded_file:
+        img = Image.open(uploaded_file)
+        img_np_orig = np.array(img)
+        # For OpenCV/FaceEngine
+        img_bgr = cv2.cvtColor(img_np_orig, cv2.COLOR_RGB2BGR)
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.image(img, caption="Original Image", use_container_width=True)
+        
+        if st.button("🚀 Run Comprehensive Analysis"):
+            # 1. YOLO Detection
+            model = load_yolo()
+            results = model.predict(img_np_orig, conf=0.15)
+            res_plotted = results[0].plot() # This has YOLO boxes
+            
+            # 2. Face Identification
+            engine = load_face_engine()
+            faces = engine.identify(img_bgr)
+            
+            # 3. Overlay Face Names on YOLO plot
+            # res_plotted is BGR from YOLO
+            for loc, name in faces:
+                top, right, bottom, left = loc
+                # Draw a distinct color (Purple) for Identified faces
+                cv2.rectangle(res_plotted, (left, top), (right, bottom), (139, 0, 255), 3)
+                cv2.putText(res_plotted, f"ID: {name}", (left, bottom + 25), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (139, 0, 255), 2)
+            
+            with col1:
+                st.image(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB), 
+                         caption="Detection + Identity Results", use_container_width=True)
+                
+            with col2:
+                st.subheader("Analysis Summary")
+                
+                # Show Identities
+                if faces:
+                    st.markdown("### 👤 Identities Found")
+                    for _, name in faces:
+                        if name == "Unknown":
+                            st.warning("Unknown Person Detected")
+                        else:
+                            st.success(f"Recognized: {name}")
+                
+                # Show Objects
+                st.markdown("### 📦 Objects Detected")
+                boxes = results[0].boxes
+                if len(boxes) == 0:
+                    st.write("No other objects found.")
+                for box in boxes:
+                    label = model.names[int(box.cls[0])]
+                    conf = float(box.conf[0])
+                    st.markdown(f"- **{label}** ({conf:.2f})")
+
+# --- PAGE: BIOMETRICS ---
+elif page == "👤 Biometrics":
+    st.title("Forensic Facial Recognition")
+    st.write("High-precision identity matching.")
+    
+    uploaded_file = st.file_uploader("Upload person frame...", type=["jpg", "png", "jpeg"])
+    
+    if uploaded_file:
+        img = Image.open(uploaded_file)
+        img_np = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.image(img, caption="Input Frame", use_container_width=True)
+            
+        if st.button("👤 Identify Person"):
+            engine = load_face_engine()
+            faces = engine.identify(img_np)
+            
+            with col1:
+                # Draw boxes and names on image
+                for loc, name in faces:
+                    top, right, bottom, left = loc
+                    cv2.rectangle(img_np, (left, top), (right, bottom), (0, 255, 0), 2)
+                    cv2.putText(img_np, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                
+                st.image(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB), caption="Identified", use_container_width=True)
+            
+            with col2:
+                st.subheader("Results")
+                if not faces:
+                    st.warning("No faces detected.")
+                for _, name in faces:
+                    if name == "Unknown":
+                        st.error(f"⚠️ {name} person detected!")
+                    else:
+                        st.success(f"✅ Identity: {name}")
+
+# --- PAGE: KNOWN FACES ---
+elif page == "📁 Known Faces":
+    st.title("Known Faces Directory")
+    
+    # 1. ADD / UPDATE PERSON
+    with st.expander("👤 Manage Person Profiles", expanded=True):
+        st.write("Create a folder for a person and upload multiple reference photos.")
+        
+        # Get existing folders
+        existing_people = [d for d in os.listdir("data/known_faces") 
+                           if os.path.isdir(os.path.join("data/known_faces", d))]
+        
+        col_name, col_opt = st.columns([2, 1])
+        with col_name:
+            # Option to select existing or type new
+            person_choice = st.selectbox("Select Existing Person", ["-- New Person --"] + existing_people)
+            if person_choice == "-- New Person --":
+                person_name = st.text_input("Enter New Person Name", placeholder="e.g. John Doe").strip()
+            else:
+                person_name = person_choice
+        
+        new_files = st.file_uploader("Upload Reference Photos", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
+        
+        if st.button("💾 Save to Library") and person_name and new_files:
+            # Create directory for the person
+            person_dir = os.path.join("data/known_faces", person_name)
+            if not os.path.exists(person_dir):
+                os.makedirs(person_dir)
+            
+            for uploaded_file in new_files:
+                # Save each file with its original name into the subfolder
+                path = os.path.join(person_dir, uploaded_file.name)
+                with open(path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.write(f"✅ Saved {uploaded_file.name} to {person_name}/")
+            
+            st.success(f"Successfully updated library for: {person_name}")
+            st.cache_resource.clear() # Clear cache to reload faces
+            st.rerun() # Refresh to update gallery
+            
+    st.divider()
+    
+    # 2. LIBRARY GALLERY
+    st.subheader("Current Library")
+    if not os.path.exists("data/known_faces"):
+        os.makedirs("data/known_faces")
+        
+    people = [d for d in os.listdir("data/known_faces") 
+              if os.path.isdir(os.path.join("data/known_faces", d))]
+    
+    if not people:
+        st.info("No person folders found. Create one above.")
+    else:
+        for p_name in people:
+            with st.container():
+                col_title, col_del = st.columns([5, 1])
+                with col_title:
+                    st.markdown(f"#### 👤 {p_name}")
+                with col_del:
+                    if st.button(f"🗑️ Delete Profile", key=f"del_folder_{p_name}"):
+                        import shutil
+                        shutil.rmtree(os.path.join("data/known_faces", p_name))
+                        st.cache_resource.clear()
+                        st.rerun()
+
+                p_dir = os.path.join("data/known_faces", p_name)
+                p_files = [f for f in os.listdir(p_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+                
+                if p_files:
+                    cols = st.columns(6)
+                    for i, f in enumerate(p_files):
+                        with cols[i % 6]:
+                            st.image(os.path.join(p_dir, f), use_container_width=True)
+                            if st.button("Delete", key=f"del_img_{p_name}_{f}"):
+                                os.remove(os.path.join(p_dir, f))
+                                st.cache_resource.clear()
+                                st.rerun()
+                else:
+                    st.write("No images in this folder.")
+                st.divider()
