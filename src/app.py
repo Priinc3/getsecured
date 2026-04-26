@@ -57,7 +57,7 @@ def load_face_engine():
 # Sidebar Navigation
 with st.sidebar:
     st.title("🛡️ Investigator")
-    page = st.radio("Navigation", ["🔍 General Detection", "🎬 Video Analysis", "👤 Biometrics", "📁 Known Faces"])
+    page = st.radio("Navigation", ["🔍 General Detection", "🎬 Video Analysis", "📡 Live Stream", "👤 Biometrics", "📁 Known Faces"])
     st.divider()
 
     if st.button("🔄 Refresh Models"):
@@ -200,6 +200,69 @@ elif page == "🎬 Video Analysis":
                 progress_bar.progress(min(fno / total_frames, 1.0))
             cap.release()
             st.success("Analysis Complete!")
+
+# --- PAGE: LIVE STREAM ---
+elif page == "📡 Live Stream":
+    st.title("Live AI Monitoring")
+    st.write("Real-time detection and identification from your device camera.")
+    
+    run_camera = st.checkbox("Toggle Camera On/Off")
+    
+    col_live, col_stats = st.columns([3, 1])
+    
+    FRAME_WINDOW = col_live.image([]) # Placeholder for the video feed
+    stats_placeholder = col_stats.empty()
+    
+    if run_camera:
+        yolo = load_yolo()
+        face_eng = load_face_engine()
+        cap = cv2.VideoCapture(0) # Open default camera
+        
+        # We use a while loop to refresh the frame
+        # In Streamlit, this will run as long as the checkbox is True
+        while run_camera:
+            ret, frame = cap.read()
+            if not ret:
+                st.error("Failed to access camera.")
+                break
+            
+            # 1. Analysis
+            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = yolo.predict(img_rgb, conf=0.2, verbose=False)
+            
+            # 2. Face ID
+            faces = face_eng.identify(frame)
+            
+            # 3. Plotting
+            res_plotted = results[0].plot()
+            for loc, name in faces:
+                top, right, bottom, left = loc
+                cv2.rectangle(res_plotted, (left, top), (right, bottom), (139, 0, 255), 3)
+                cv2.putText(res_plotted, f"ID: {name}", (left, bottom + 25), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (139, 0, 255), 2)
+            
+            # Update Dashboard
+            FRAME_WINDOW.image(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB))
+            
+            # Simple Stats Summary
+            labels = [yolo.names[int(b.cls[0])] for b in results[0].boxes]
+            identities = [name for _, name in faces]
+            
+            with stats_placeholder.container():
+                st.markdown("### 📊 Live Stats")
+                st.write(f"**Objects:** {len(labels)}")
+                if identities:
+                    st.write(f"**People:** {', '.join(set(identities))}")
+                
+            # If the user unchecks the box during the loop, break out
+            # Note: Streamlit reruns on state change, but this local while loop
+            # is a common way to handle live feeds in local Streamlit apps.
+            if not run_camera:
+                break
+        
+        cap.release()
+    else:
+        st.info("Click the toggle to start the live feed.")
 
 # --- PAGE: BIOMETRICS ---
 elif page == "👤 Biometrics":
