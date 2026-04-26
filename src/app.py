@@ -1,10 +1,14 @@
+import os
+# Fix for macOS OpenCV authorization/threading issue
+os.environ["OPENCV_AVFOUNDATION_SKIP_AUTH"] = "1"
+
 import streamlit as st
 import cv2
-import os
 import numpy as np
 from PIL import Image
 from ultralytics import YOLOWorld
 from face_engine import FaceEngine
+import shutil
 
 # Page configuration
 st.set_page_config(
@@ -77,25 +81,19 @@ if page == "🔍 General Detection":
     if uploaded_file:
         img = Image.open(uploaded_file)
         img_np_orig = np.array(img)
-        # For OpenCV/FaceEngine
         img_bgr = cv2.cvtColor(img_np_orig, cv2.COLOR_RGB2BGR)
         
         col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.image(img, caption="Original Image", use_container_width=True)
+        with col1: st.image(img, caption="Original Image", width=None, use_container_width=True)
         
         if st.button("🚀 Run Comprehensive Analysis"):
-            # 1. YOLO Detection
             model = load_yolo()
             results = model.predict(img_np_orig, conf=0.15)
-            res_plotted = results[0].plot() # This has YOLO boxes
+            res_plotted = results[0].plot()
             
-            # 2. Face Identification
             engine = load_face_engine()
             faces = engine.identify(img_bgr)
             
-            # 3. Overlay Face Names on YOLO plot
             for loc, name in faces:
                 top, right, bottom, left = loc
                 cv2.rectangle(res_plotted, (left, top), (right, bottom), (139, 0, 255), 3)
@@ -103,23 +101,19 @@ if page == "🔍 General Detection":
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (139, 0, 255), 2)
             
             with col1:
-                st.image(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB), 
-                         caption="Detection + Identity Results", use_container_width=True)
+                st.image(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB), caption="Results", width=None, use_container_width=True)
                 
             with col2:
                 st.subheader("Analysis Summary")
                 if faces:
                     st.markdown("### 👤 Identities Found")
                     for _, name in faces:
-                        if name == "Unknown":
-                            st.warning("Unknown Person Detected")
-                        else:
-                            st.success(f"Recognized: {name}")
+                        if name == "Unknown": st.warning("Unknown Person Detected")
+                        else: st.success(f"Recognized: {name}")
                 
                 st.markdown("### 📦 Objects Detected")
                 boxes = results[0].boxes
-                if len(boxes) == 0:
-                    st.write("No other objects found.")
+                if len(boxes) == 0: st.write("No other objects found.")
                 for box in boxes:
                     label = model.names[int(box.cls[0])]
                     conf = float(box.conf[0])
@@ -129,74 +123,50 @@ if page == "🔍 General Detection":
 elif page == "🎬 Video Analysis":
     st.title("Automated Video Investigation")
     st.write("Process long footage and extract significant events.")
-
     uploaded_video = st.file_uploader("Upload Video File", type=["mp4", "avi", "mov"])
-
     col_settings, _ = st.columns([1, 2])
     with col_settings:
         interval = st.slider("Analyze every (seconds)", min_value=0.5, max_value=10.0, value=2.0, step=0.5)
 
     if uploaded_video:
         tfile = "data/videos/temp_upload.mp4"
-        if not os.path.exists("data/videos"):
-            os.makedirs("data/videos")
-        with open(tfile, "wb") as f:
-            f.write(uploaded_video.getbuffer())
-
+        os.makedirs("data/videos", exist_ok=True)
+        with open(tfile, "wb") as f: f.write(uploaded_video.getbuffer())
         st.video(uploaded_video)
 
         if st.button("🚀 Start Processing"):
             cap = cv2.VideoCapture(tfile)
             fps = cap.get(cv2.CAP_PROP_FPS)
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            duration = total_frames / fps
-
-            st.info(f"Video length: {duration:.2f}s | Sampling every {interval}s")
-
             yolo = load_yolo()
             face_eng = load_face_engine()
-
+            
             progress_bar = st.progress(0)
-            status_text = st.empty()
             results_container = st.container()
-
             frame_step = int(fps * interval)
+            
             for fno in range(0, total_frames, frame_step):
                 cap.set(cv2.CAP_PROP_POS_FRAMES, fno)
                 ret, frame = cap.read()
                 if not ret: break
-
-                timestamp = fno / fps
-                status_text.text(f"Processing frame at {timestamp:.1f}s...")
                 
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                res = yolo.predict(frame_rgb, conf=0.15, verbose=False)
-
-                found_interesting = False
-                for box in res[0].boxes:
-                    if yolo.names[int(box.cls[0])] in ["person", "face", "knife", "gun"]:
-                        found_interesting = True; break
-
-                if found_interesting:
+                res = yolo.predict(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), conf=0.15, verbose=False)
+                if any(yolo.names[int(b.cls[0])] in ["person", "face", "knife", "gun"] for b in res[0].boxes):
                     faces = face_eng.identify(frame)
-                    res_plotted = res[0].plot()
+                    res_p = res[0].plot()
                     for loc, name in faces:
                         top, right, bottom, left = loc
-                        cv2.rectangle(res_plotted, (left, top), (right, bottom), (139, 0, 255), 3)
-                        cv2.putText(res_plotted, f"ID: {name}", (left, bottom + 25), 
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (139, 0, 255), 2)
+                        cv2.rectangle(res_p, (left, top), (right, bottom), (139, 0, 255), 3)
+                        cv2.putText(res_p, f"ID: {name}", (left, bottom + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (139, 0, 255), 2)
                     
                     with results_container:
-                        st.markdown(f"#### 🚩 Event at {timestamp:.1f}s")
+                        st.markdown(f"#### 🚩 Event at {fno/fps:.1f}s")
                         c1, c2 = st.columns([2, 1])
-                        with c1: st.image(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB), use_container_width=True)
+                        c1.image(cv2.cvtColor(res_p, cv2.COLOR_BGR2RGB), width=None, use_container_width=True)
                         with c2:
-                            if faces:
+                            if faces: 
                                 for _, name in faces: st.success(f"Recognized: {name}")
-                            labels = [yolo.names[int(b.cls[0])] for b in res[0].boxes]
-                            st.write(f"Detected: {', '.join(set(labels))}")
-                        st.divider()
-
+                            st.write(f"Detected: {', '.join(set([yolo.names[int(b.cls[0])] for b in res[0].boxes]))}")
                 progress_bar.progress(min(fno / total_frames, 1.0))
             cap.release()
             st.success("Analysis Complete!")
@@ -204,136 +174,99 @@ elif page == "🎬 Video Analysis":
 # --- PAGE: LIVE STREAM ---
 elif page == "📡 Live Stream":
     st.title("Live AI Monitoring")
-    st.write("Real-time detection and identification from your device camera.")
-    
+    st.write("Real-time detection from your device camera.")
     run_camera = st.checkbox("Toggle Camera On/Off")
-    
     col_live, col_stats = st.columns([3, 1])
-    
-    FRAME_WINDOW = col_live.image([]) # Placeholder for the video feed
+    FRAME_WINDOW = col_live.image([])
     stats_placeholder = col_stats.empty()
     
     if run_camera:
         yolo = load_yolo()
         face_eng = load_face_engine()
-        cap = cv2.VideoCapture(0) # Open default camera
+        # Explicitly try AVFOUNDATION for macOS
+        cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
         
-        # We use a while loop to refresh the frame
-        # In Streamlit, this will run as long as the checkbox is True
+        if not cap.isOpened():
+            st.error("Could not open camera. Ensure Terminal has Camera permissions in System Settings > Privacy & Security.")
+        
         while run_camera:
             ret, frame = cap.read()
-            if not ret:
-                st.error("Failed to access camera.")
-                break
+            if not ret: break
             
-            # 1. Analysis
-            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = yolo.predict(img_rgb, conf=0.2, verbose=False)
-            
-            # 2. Face ID
+            res = yolo.predict(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), conf=0.2, verbose=False)
             faces = face_eng.identify(frame)
-            
-            # 3. Plotting
-            res_plotted = results[0].plot()
+            res_p = res[0].plot()
             for loc, name in faces:
-                top, right, bottom, left = loc
-                cv2.rectangle(res_plotted, (left, top), (right, bottom), (139, 0, 255), 3)
-                cv2.putText(res_plotted, f"ID: {name}", (left, bottom + 25), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (139, 0, 255), 2)
+                t, r, b, l = loc
+                cv2.rectangle(res_p, (l, t), (r, b), (139, 0, 255), 3)
+                cv2.putText(res_p, f"ID: {name}", (l, b + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (139, 0, 255), 2)
             
-            # Update Dashboard
-            FRAME_WINDOW.image(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB))
-            
-            # Simple Stats Summary
-            labels = [yolo.names[int(b.cls[0])] for b in results[0].boxes]
-            identities = [name for _, name in faces]
-            
+            FRAME_WINDOW.image(cv2.cvtColor(res_p, cv2.COLOR_BGR2RGB))
             with stats_placeholder.container():
                 st.markdown("### 📊 Live Stats")
-                st.write(f"**Objects:** {len(labels)}")
-                if identities:
-                    st.write(f"**People:** {', '.join(set(identities))}")
-                
-            # If the user unchecks the box during the loop, break out
-            # Note: Streamlit reruns on state change, but this local while loop
-            # is a common way to handle live feeds in local Streamlit apps.
-            if not run_camera:
-                break
-        
+                st.write(f"**Objects:** {len(res[0].boxes)}")
+                if faces: st.write(f"**People:** {', '.join(set([n for _, n in faces]))}")
         cap.release()
     else:
-        st.info("Click the toggle to start the live feed.")
+        st.info("Toggle to start. (Note: On macOS, grant Camera access to your Terminal/IDE)")
 
 # --- PAGE: BIOMETRICS ---
 elif page == "👤 Biometrics":
     st.title("Forensic Facial Recognition")
-    st.write("High-precision identity matching.")
-    
-    uploaded_file = st.file_uploader("Upload person frame...", type=["jpg", "png", "jpeg"])
-    
-    if uploaded_file:
-        img = Image.open(uploaded_file)
+    u_file = st.file_uploader("Upload person frame...", type=["jpg", "png", "jpeg"])
+    if u_file:
+        img = Image.open(u_file)
         img_np = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         col1, col2 = st.columns([2, 1])
-        with col1: st.image(img, caption="Input Frame", use_container_width=True)
-            
+        col1.image(img, caption="Input Frame", width=None, use_container_width=True)
         if st.button("👤 Identify Person"):
             engine = load_face_engine()
             faces = engine.identify(img_np)
-            with col1:
-                for loc, name in faces:
-                    top, right, bottom, left = loc
-                    cv2.rectangle(img_np, (left, top), (right, bottom), (0, 255, 0), 2)
-                    cv2.putText(img_np, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                st.image(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB), caption="Identified", use_container_width=True)
+            for loc, name in faces:
+                t, r, b, l = loc
+                cv2.rectangle(img_np, (l, t), (r, b), (0, 255, 0), 2)
+                cv2.putText(img_np, name, (l, t - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+            col1.image(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB), width=None, use_container_width=True)
             with col2:
                 st.subheader("Results")
                 if not faces: st.warning("No faces detected.")
                 for _, name in faces:
-                    if name == "Unknown": st.error(f"⚠️ {name} person detected!")
+                    if name == "Unknown": st.error("⚠️ Unknown person detected!")
                     else: st.success(f"✅ Identity: {name}")
 
 # --- PAGE: KNOWN FACES ---
 elif page == "📁 Known Faces":
     st.title("Known Faces Directory")
-    with st.expander("👤 Manage Person Profiles", expanded=True):
-        st.write("Create a folder for a person and upload multiple reference photos.")
-        existing_people = []
-        if os.path.exists("data/known_faces"):
-            existing_people = [d for d in os.listdir("data/known_faces") if os.path.isdir(os.path.join("data/known_faces", d))]
-        
-        col_name, col_opt = st.columns([2, 1])
-        with col_name:
-            person_choice = st.selectbox("Select Existing Person", ["-- New Person --"] + existing_people)
-            person_name = st.text_input("Enter New Person Name").strip() if person_choice == "-- New Person --" else person_choice
-        
-        new_files = st.file_uploader("Upload Reference Photos", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
-        if st.button("💾 Save to Library") and person_name and new_files:
-            person_dir = os.path.join("data/known_faces", person_name)
-            os.makedirs(person_dir, exist_ok=True)
-            for f in new_files:
-                with open(os.path.join(person_dir, f.name), "wb") as out: out.write(f.getbuffer())
-            st.success(f"Updated {person_name}!"); st.cache_resource.clear(); st.rerun()
-            
-    st.divider()
-    st.subheader("Current Library")
+    with st.expander("👤 Manage Profiles", expanded=True):
+        existing = [d for d in os.listdir("data/known_faces") if os.path.isdir(os.path.join("data/known_faces", d))] if os.path.exists("data/known_faces") else []
+        c_n, _ = st.columns([2, 1])
+        choice = c_n.selectbox("Person", ["-- New Person --"] + existing)
+        p_name = st.text_input("New Name").strip() if choice == "-- New Person --" else choice
+        u_files = st.file_uploader("Photos", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
+        if st.button("💾 Save") and p_name and u_files:
+            p_dir = os.path.join("data/known_faces", p_name)
+            os.makedirs(p_dir, exist_ok=True)
+            for f in u_files:
+                with open(os.path.join(p_dir, f.name), "wb") as o: o.write(f.getbuffer())
+            st.success("Updated!"); st.cache_resource.clear(); st.rerun()
+
+    st.subheader("Library")
     if os.path.exists("data/known_faces"):
-        people = [d for d in os.listdir("data/known_faces") if os.path.isdir(os.path.join("data/known_faces", d))]
-        for p_name in people:
+        for p in [d for d in os.listdir("data/known_faces") if os.path.isdir(os.path.join("data/known_faces", d))]:
             with st.container():
                 c_t, c_d = st.columns([5, 1])
-                c_t.markdown(f"#### 👤 {p_name}")
-                if c_d.button(f"🗑️ Delete Profile", key=f"del_f_{p_name}"):
-                    import shutil; shutil.rmtree(os.path.join("data/known_faces", p_name))
+                c_t.markdown(f"#### 👤 {p}")
+                if c_d.button(f"🗑️ Delete", key=f"d_f_{p}"):
+                    shutil.rmtree(os.path.join("data/known_faces", p))
                     st.cache_resource.clear(); st.rerun()
-                p_dir = os.path.join("data/known_faces", p_name)
-                p_files = [f for f in os.listdir(p_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-                if p_files:
+                p_dir = os.path.join("data/known_faces", p)
+                imgs = [f for f in os.listdir(p_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+                if imgs:
                     cols = st.columns(6)
-                    for i, f in enumerate(p_files):
+                    for i, f in enumerate(imgs):
                         with cols[i % 6]:
-                            st.image(os.path.join(p_dir, f), use_container_width=True)
-                            if st.button("Del", key=f"del_i_{p_name}_{f}"):
+                            st.image(os.path.join(p_dir, f), width=None, use_container_width=True)
+                            if st.button("x", key=f"d_i_{p}_{f}"):
                                 os.remove(os.path.join(p_dir, f))
                                 st.cache_resource.clear(); st.rerun()
                 st.divider()
