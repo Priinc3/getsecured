@@ -2,46 +2,48 @@
 
 ## Overview
 - **Purpose**: A generative AI pipeline that transforms unstructured video footage into searchable, verifiable insights with anomaly detection and facial re-identification.
-- **Stack**: Python, OpenCV, YOLO11, face_recognition, Ollama (Moondream/LLaVA/LLaMA), ChromaDB, LangGraph
-- **Status**: In Development
-- **Version**: 0.1.0
-- **Last Updated**: 2026-04-25
+- **Stack**: Python, OpenCV, YOLO11, face_recognition, Ollama, Groq (Llama 4 Scout), ChromaDB, LangGraph
+- **Status**: In Development (VLM Integrated)
+- **Version**: 4.0.0
+- **Last Updated**: 2026-04-28
 
 ## File Structure
 ```
 /
 ├── src/
+│   ├── app.py              # Main Streamlit UI
 │   ├── vision_test.py      # YOLO-World initialization & testing
+│   ├── face_engine.py      # Biometric identity matching
+│   ├── vlm_engine.py       # Groq/Ollama narrative generation
+│   ├── rag_engine.py       # ChromaDB event logging
 ├── data/
 │   ├── known_faces/        # Profiles for re-identification
 │   ├── videos/             # Source .mp4 files
-│   ├── output/             # Processed events/frames
+│   ├── db/                 # ChromaDB persistence
 ├── models/
 │   ├── custom_yolo_world.pt # Saved model with custom classes
 ```
 
 ## Key Components
-| Component | File | Purpose |
-|-----------|------|---------|
-| Vision Pipeline | src/vision_test.py | YOLO-World trigger (detects faces, weapons, etc.) |
-| Face Engine | src/face_engine.py | Handles identity matching against known_faces |
-| VLM Descriptor | [TBD] | Parses frames into JSON via Ollama |
-| Watchdog Agent | [TBD] | Scores events for anomaly |
-| RAG DB Setup | [TBD] | Embeds events into ChromaDB |
-| LangGraph | [TBD] | Resolves natural language user queries |
+| Component | File | Purpose | Status |
+|-----------|------|---------|--------|
+| Vision Pipeline | src/app.py | YOLO-World trigger (detects faces, weapons, etc.) | ✅ Done |
+| Face Engine | src/face_engine.py | Handles identity matching against known_faces | ✅ Done |
+| VLM Descriptor | src/vlm_engine.py | Parses frames into JSON via Groq/Ollama | ✅ Done |
+| Watchdog Agent | [TBD] | Scores events for anomaly | 🛠️ In Progress |
+| RAG DB Setup | src/rag_engine.py | Embeds events into ChromaDB | ✅ Done |
+| LangGraph | [TBD] | Resolves natural language user queries | 🛠️ In Progress |
 
 ## Environment Variables
 | Variable | Description | Required? |
 |----------|-------------|-----------|
 | OLLAMA_HOST | URL for local Ollama instance (default: localhost:11434) | No |
-
-## API Endpoints
-N/A (Local script execution for MVP)
+| GROQ_API_KEY| Key for Llama-4-Scout narrative generation | Yes (for Cloud) |
 
 ## Known Issues
-- None yet
+- Environment: Requires `numpy<2.0` for pandas compatibility.
 
 ## Next Steps
-- [ ] Implement Face Recognition + YOLO pre-processing step
-- [ ] Connect single frame to Ollama Moondream for JSON extraction
-- [ ] Build Watchdog prompt and RAG pipeline
+- [ ] Implement advanced anomaly detection logic (Watchdog Agent)
+- [ ] Connect LangGraph for complex natural language queries
+- [ ] Optimize real-time live stream processing speed

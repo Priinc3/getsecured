@@ -7,3 +7,4 @@ chromadb
 sentence-transformers
 langgraph
 groq
+numpy<2.0
