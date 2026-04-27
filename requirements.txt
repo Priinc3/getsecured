@@ -6,3 +6,4 @@ ollama
 chromadb
 sentence-transformers
 langgraph
+groq

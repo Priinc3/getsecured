@@ -4,120 +4,129 @@ import base64
 import cv2
 import os
 import re
+from groq import Groq
 
 class VLMEngine:
-    def __init__(self, model="moondream"):
+    def __init__(self, model="llama-3.2-11b-vision-preview", provider="local", api_key=None):
         self.model = model
-        self.version = "2.1.0-smart-parsing"
-        print(f"🚀 VLM Engine v{self.version} Initialized")
+        self.provider = provider
+        self.api_key = api_key
+        self.version = "4.0.0-groq-integrated"
+        self.client = Groq(api_key=api_key) if provider == "groq" and api_key else None
+        print(f"🚀 VLM Engine v{self.version} Initialized ({self.provider})")
 
-    def describe_event(self, frame, identity="Unknown", detections=[]):
+    def describe_event(self, frame, identity="Unknown", detections=[], last_report=None):
         """
-        Sends the frame to a local VLM and parses the response robustly.
+        Sends the frame to a VLM (Local or Groq) and parses the response.
         """
         _, buffer = cv2.imencode('.jpg', frame)
         img_base64 = base64.b64encode(buffer).decode('utf-8')
         
-        # 2. Prepare the Authoritative Prompt
         objects_str = ", ".join(detections) if detections else "general environment"
+        memory_context = f"\n[PREVIOUS STATE]: {last_report}" if last_report else ""
+        
         prompt = f"""
-        [SYSTEM REFERENCE DATA - DO NOT IGNORE]
+        [SYSTEM REFERENCE DATA]{memory_context}
         Verified Subject: {identity}
         Verified Detections: {objects_str}
         
         [INSTRUCTIONS]
-        Use the System Reference Data above to analyze this image. 
-        Describe the interaction between the Subject and the Detections.
+        Analyze the image and the System Data. Use the data to describe exactly what is happening.
+        If there is a [PREVIOUS STATE], update the story based on new movements.
         
         Provide a security report with these exact headers:
-        ACTION: Detail what {identity} is doing with the {objects_str}.
-        CONTEXT: Describe the setting and background.
-        ITEMS: List any dangerous or suspicious items confirmed in the image.
+        ACTION: Detail what is happening now.
+        CONTEXT: Describe the setting.
+        ITEMS: List any dangerous or suspicious items.
         ALERT: (Low, Medium, High, or Critical)
         SUMMARY: A one-sentence security overview.
         """
 
-        print(f"🧠 Sending event to VLM ({self.model})...")
+        if self.provider == "groq":
+            return self._call_groq(img_base64, prompt)
+        else:
+            return self._call_ollama(img_base64, prompt)
+
+    def _call_ollama(self, img_base64, prompt):
+        print(f"🧠 [Local] Sending to {self.model}...")
         try:
-            response = ollama.generate(
-                model=self.model,
-                prompt=prompt,
-                images=[img_base64],
-                options={"temperature": 0.1}
-            )
-            
-            raw_text = response.get('response', '').strip()
-            print(f"📝 RAW VLM RESPONSE:\n{raw_text}")
-            
-            if not raw_text:
-                return {"action": "No response", "context": "N/A", "suspicious_objects": [], "summary": "VLM returned an empty response."}
-
-            # --- SMART PARSING (Regex) ---
-            parsed = {
-                "action": self._extract(raw_text, r"(?:ACTION|Action|action):\s*(.*)"),
-                "context": self._extract(raw_text, r"(?:CONTEXT|Context|context):\s*(.*)"),
-                "suspicious_objects": [],
-                "summary": self._extract(raw_text, r"(?:SUMMARY|Summary|summary):\s*(.*)"),
-                "alert_level": "Low", # Default
-                "alert_type": "None"
-            }
-
-            # --- GLOBAL THREAT HEURISTIC (Scan whole response) ---
-            full_text_lower = raw_text.lower()
-            
-            # 1. Critical Threats: Lethal Weapons
-            weapons = [
-                "gun", "pistol", "rifle", "firearm", "shotgun", "handgun", "revolver",
-                "knife", "dagger", "blade", "sword", "machete", "axe", "cleaver"
-            ]
-            found_weapons = [w for w in weapons if w in full_text_lower]
-            
-            # 2. High Threats: Break-in tools, disguises, and forced entry
-            suspicious = [
-                "mask", "balaclava", "ski mask", "hoodie", "face cover", 
-                "crowbar", "hammer", "bolt cutter", "screwdriver", "picklock",
-                "breaking", "forced", "smashed", "climbing", "crawling", "sneaking",
-                "jumped", "fence", "window"
-            ]
-            found_suspicious = [s for s in suspicious if s in full_text_lower]
-
-            if found_weapons:
-                parsed["alert_level"] = "Critical"
-                parsed["alert_type"] = f"CRITICAL: Lethal Weapon ({', '.join(found_weapons)})"
-                if not parsed["suspicious_objects"]: parsed["suspicious_objects"] = found_weapons
-            elif found_suspicious:
-                parsed["alert_level"] = "High"
-                parsed["alert_type"] = f"HIGH: Suspicious Activity ({', '.join(found_suspicious)})"
-                if not parsed["suspicious_objects"]: parsed["suspicious_objects"] = found_suspicious
-
-            # 3. Final Override: If AI explicitly says Critical/High, respect it
-            ai_alert = self._extract(raw_text, r"(?:ALERT|Alert|alert):\s*(.*)").capitalize()
-            if ai_alert in ["High", "Critical"] and parsed["alert_level"] == "Low":
-                parsed["alert_level"] = ai_alert
-                parsed["alert_type"] = "AI Flagged Threat"
-
-            # --- FALLBACK LOGIC ---
-            if not parsed["action"] or parsed["action"] == "Unknown":
-                parsed["summary"] = raw_text.split('\n')[0]
-                parsed["action"] = "Activity Detected"
-            
-            # Clean up
-            for key in ["action", "context", "summary"]:
-                if not parsed[key] or parsed[key].strip() == "" or parsed[key] == "Unknown":
-                    parsed[key] = "Detailed in summary" if key != "summary" else raw_text
-
-            return parsed
+            response = ollama.generate(model=self.model, prompt=prompt, images=[img_base64], options={"temperature": 0.1})
+            return self._parse_response(response.get('response', '').strip())
         except Exception as e:
-            print(f"❌ VLM Error: {e}")
-            return {"action": "Error", "context": "N/A", "suspicious_objects": [], "summary": str(e)}
+            return {"action": "Error", "summary": f"Local VLM Error: {str(e)}"}
+
+    def _call_groq(self, img_base64, prompt):
+        print(f"⚡ [Groq-Scout] Sending to {self.model}...")
+        if not self.client:
+            return {"action": "Error", "summary": "Groq API Key missing."}
+        
+        try:
+            # Using the specific Llama 4 Scout model provided by the user
+            completion = self.client.chat.completions.create(
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{img_base64}",
+                                },
+                            },
+                        ],
+                    }
+                ],
+                temperature=0.1,
+                max_completion_tokens=1024,
+                top_p=1,
+                stream=False # Changed to False for internal parsing
+            )
+            raw_text = completion.choices[0].message.content
+            return self._parse_response(raw_text)
+        except Exception as e:
+            print(f"❌ Groq Error: {e}")
+            return {"action": "Error", "summary": f"Groq API Error: {str(e)}"}
+
+    def _parse_response(self, raw_text):
+        print(f"📝 RAW VLM RESPONSE:\n{raw_text}")
+        
+        parsed = {
+            "action": self._extract(raw_text, r"(?:ACTION|Action|action):\s*(.*)"),
+            "context": self._extract(raw_text, r"(?:CONTEXT|Context|context):\s*(.*)"),
+            "suspicious_objects": [],
+            "summary": self._extract(raw_text, r"(?:SUMMARY|Summary|summary):\s*(.*)"),
+            "alert_level": "Low",
+            "alert_type": "None"
+        }
+
+        # --- GLOBAL THREAT HEURISTIC ---
+        full_text_lower = raw_text.lower()
+        weapons = ["gun", "pistol", "rifle", "firearm", "knife", "blade", "sword", "machete", "axe"]
+        found_weapons = [w for w in weapons if w in full_text_lower]
+        
+        suspicious = ["mask", "balaclava", "crowbar", "hammer", "breaking", "forced", "climbing"]
+        found_suspicious = [s for s in suspicious if s in full_text_lower]
+
+        if found_weapons:
+            parsed["alert_level"] = "Critical"
+            parsed["alert_type"] = f"CRITICAL: Weapon ({', '.join(found_weapons)})"
+        elif found_suspicious:
+            parsed["alert_level"] = "High"
+            parsed["alert_type"] = f"HIGH: Suspicious ({', '.join(found_suspicious)})"
+
+        if not parsed["summary"] or parsed["summary"] == "Unknown":
+            parsed["summary"] = raw_text.split('\n')[0]
+            parsed["action"] = "Activity Detected"
+        
+        return parsed
 
     def _extract(self, text, pattern):
         match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            line = match.group(1).split('\n')[0].strip()
-            return line
+        if match: return match.group(1).split('\n')[0].strip()
         return "Unknown"
 
 if __name__ == "__main__":
     engine = VLMEngine()
-    print("💡 VLM Engine Initialized. Ready to process frames.")
+    print("💡 VLM Engine v4.0 (Groq Ready) Initialized.")

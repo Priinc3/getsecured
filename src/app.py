@@ -47,13 +47,28 @@ def load_face_engine():
     return FaceEngine()
 
 @st.cache_resource
-def load_vlm_engine():
-    return VLMEngine(model="moondream")
+def load_vlm_engine(model_name, provider, api_key):
+    return VLMEngine(model=model_name, provider=provider, api_key=api_key)
 
 # Sidebar
 with st.sidebar:
     st.title("🛡️ Investigator")
     page = st.radio("Navigation", ["🔍 General Detection", "🎬 Video Analysis", "📡 Live Stream", "👤 Biometrics", "📁 Known Faces"])
+    
+    st.divider()
+    st.subheader("🧠 VLM Configuration")
+    vlm_provider = st.selectbox("Provider", ["local", "groq", "nvidia"], index=1) # Default to Groq
+    
+    if vlm_provider == "local":
+        vlm_model = st.selectbox("Model", ["moondream", "llama3.2-vision", "llava"], index=0)
+        nim_key = None
+    elif vlm_provider == "groq":
+        vlm_model = st.text_input("Groq Model", value="meta-llama/llama-4-scout-17b-16e-instruct")
+        nim_key = st.text_input("Groq API Key", type="password", value="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")
+    else:
+        vlm_model = st.text_input("NIM Model", value="nvidia/llama-3.2-nv-vision-70b-v1")
+        nim_key = st.text_input("NVIDIA API Key", type="password", value="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")
+    
     st.divider()
     if st.button("🔄 Refresh Models"):
         st.cache_resource.clear()
@@ -68,10 +83,13 @@ if page == "📡 Live Stream":
     if 'run_live' not in st.session_state: st.session_state.run_live = False
     if 'capturing_remaining' not in st.session_state: st.session_state.capturing_remaining = 0
 
-    col_ctrl, col_idx, col_throttle = st.columns([1, 1, 1])
+    col_ctrl, col_idx, col_throttle, col_vlm_t = st.columns([1, 1, 1, 1])
     cam_idx = col_idx.selectbox("Camera Index", [0, 1, 2], index=0)
-    ai_interval = col_throttle.slider("AI Interval (s)", 0.0, 5.0, 0.2, step=0.1)
+    ai_interval = col_throttle.slider("YOLO Interval (s)", 0.0, 5.0, 0.2, step=0.1)
+    vlm_interval = col_vlm_t.slider("VLM Interval (s)", 1, 60, 10)
     
+    if 'last_vlm_nar' not in st.session_state: st.session_state.last_vlm_nar = "System initialized. No events recorded yet."
+
     if not st.session_state.run_live:
         if col_ctrl.button("🚀 Start Live Camera"):
             st.session_state.run_live = True; st.rerun()
@@ -98,20 +116,41 @@ if page == "📡 Live Stream":
         stats_placeholder = st.empty()
     
     if st.session_state.run_live:
-        yolo = load_yolo(); face_eng = load_face_engine(); cap = cv2.VideoCapture(cam_idx)
+        yolo = load_yolo(); face_eng = load_face_engine(); vlm = load_vlm_engine(vlm_model, vlm_provider, nim_key); cap = cv2.VideoCapture(cam_idx)
         if not cap.isOpened():
             st.error(f"Camera failed."); st.session_state.run_live = False
         else:
             try:
-                last_cap_t = 0; last_ai_t = 0; results = None; faces = []
+                last_cap_t = 0; last_ai_t = 0; last_vlm_t = 0
+                results = None; faces = []
+                vlm_placeholder = col_stats.empty()
+                
                 while st.session_state.run_live:
                     ret, frame = cap.read()
                     if not ret: break
                     curr_t = time.time()
                     
+                    # 1. YOLO Detection (Eyes)
                     if curr_t - last_ai_t >= ai_interval:
                         results = yolo.predict(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), conf=0.25, verbose=False)
                         faces = face_eng.identify(frame); last_ai_t = curr_t
+                        
+                        # 2. VLM Trigger (Brain) - Rule: If person or weapon detected and > X s since last report
+                        if results and len(results[0].boxes) > 0:
+                            dets = [yolo.names[int(b.cls[0])] for b in results[0].boxes]
+                            if any(d in ["person", "knife", "gun"] for d in dets) and (curr_t - last_vlm_t > vlm_interval):
+                                with vlm_placeholder: st.spinner("🧠 AI Thinking...")
+                                nar = vlm.describe_event(frame, identity=", ".join(set([n for _, n in faces])) if faces else "Unknown", 
+                                                       detections=dets, 
+                                                       last_report=st.session_state.last_vlm_nar)
+                                
+                                st.session_state.last_vlm_nar = nar.get("summary", "")
+                                with vlm_placeholder.container():
+                                    st.markdown(f"#### 🎙️ Live Narrative")
+                                    if nar.get("alert_level") in ["High", "Critical"]:
+                                        st.error(f"**{nar.get('alert_type')}**")
+                                    st.write(nar.get("summary"))
+                                last_vlm_t = curr_t
                     
                     if st.session_state.capturing_remaining > 0 and curr_t - last_cap_t > 0.3:
                         p_dir = os.path.join("data/known_faces", st.session_state.current_train_name)
@@ -164,7 +203,7 @@ elif page == "🔍 General Detection":
         if 'last_analysis' in st.session_state:
             if st.button("🧠 Generate AI Narrative"):
                 with st.spinner("Analyzing..."):
-                    vlm = load_vlm_engine(); d = st.session_state.last_analysis
+                    vlm = load_vlm_engine(vlm_model, vlm_provider, nim_key); d = st.session_state.last_analysis
                     nar = vlm.describe_event(d["frame"], identity=", ".join(set(d["ids"])) if d["ids"] else "Unknown", detections=d["dets"])
                     
                     # --- ALERT UI ---
@@ -192,7 +231,7 @@ elif page == "🎬 Video Analysis":
         st.video(u_vid)
         if st.button("🚀 Start"):
             cap = cv2.VideoCapture(tfile); fps = cap.get(cv2.CAP_PROP_FPS); total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            yolo = load_yolo(); face_eng = load_face_engine(); vlm = load_vlm_engine()
+            yolo = load_yolo(); face_eng = load_face_engine(); vlm = load_vlm_engine(vlm_model, vlm_provider, nim_key)
             progress = st.progress(0); results_cont = st.container()
             step = int(fps * interval)
             for fno in range(0, total, step):
