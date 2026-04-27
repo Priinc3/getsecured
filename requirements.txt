@@ -1,10 +1,10 @@
 streamlit
 ultralytics
-opencv-python
+opencv-python==4.9.0.80
 face_recognition
 ollama
 chromadb
 sentence-transformers
 langgraph
 groq
-numpy<2.0
+numpy==1.26.4

@@ -3,8 +3,8 @@
 ## Overview
 - **Purpose**: A generative AI pipeline that transforms unstructured video footage into searchable, verifiable insights with anomaly detection and facial re-identification.
 - **Stack**: Python, OpenCV, YOLO11, face_recognition, Ollama, Groq (Llama 4 Scout), ChromaDB, LangGraph
-- **Status**: In Development (VLM Integrated)
-- **Version**: 4.0.0
+- **Status**: Active Development (Watchdog Agent & Premium UI Integrated)
+- **Version**: 4.1.0
 - **Last Updated**: 2026-04-28
 
 ## File Structure

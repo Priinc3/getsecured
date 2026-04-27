@@ -12,6 +12,7 @@ from vlm_engine import VLMEngine
 import shutil
 import time
 from datetime import datetime
+from watchdog_agent import WatchdogAgent
 
 # Page configuration
 st.set_page_config(
@@ -21,16 +22,93 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom Styling
+# Custom Styling for a Premium Look
 st.markdown("""
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
     <style>
-    .main { background-color: #f9fafb; }
-    .stButton>button {
-        background-color: #111827;
-        color: white;
-        border-radius: 8px;
+    /* Global Styles */
+    * { font-family: 'Outfit', sans-serif; }
+    
+    .main {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        color: #f8fafc;
     }
-    h1, h2, h3 { color: #111827; }
+    
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #020617 !important;
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    section[data-testid="stSidebar"] .stMarkdown h1 {
+        color: #6366f1;
+        font-weight: 700;
+        letter-spacing: -1px;
+    }
+    
+    /* Glassmorphism Cards */
+    div.stButton > button {
+        background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 100%);
+        color: white;
+        border: none;
+        padding: 0.6rem 1.5rem;
+        border-radius: 12px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3);
+    }
+    
+    div.stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4);
+        border: none;
+        color: white;
+    }
+    
+    /* File Uploader Style */
+    [data-testid="stFileUploader"] {
+        background: rgba(30, 41, 59, 0.5);
+        border: 2px dashed rgba(99, 102, 241, 0.3);
+        border-radius: 16px;
+        padding: 2rem;
+        backdrop-filter: blur(10px);
+    }
+    
+    /* Headers */
+    h1, h2, h3 {
+        background: linear-gradient(to right, #ffffff, #94a3b8);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 700;
+    }
+    
+    /* Navigation Radio Fix */
+    div[data-testid="stWidgetLabel"] p {
+        font-weight: 600;
+        color: #94a3b8;
+    }
+    
+    /* Metric Boxes */
+    div[data-testid="stMetricValue"] {
+        color: #6366f1;
+    }
+    
+    /* Info/Success Boxes */
+    .stAlert {
+        background: rgba(30, 41, 59, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        backdrop-filter: blur(5px);
+    }
+    
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -49,6 +127,10 @@ def load_face_engine():
 @st.cache_resource
 def load_vlm_engine(model_name, provider, api_key):
     return VLMEngine(model=model_name, provider=provider, api_key=api_key)
+
+@st.cache_resource
+def load_watchdog(api_key):
+    return WatchdogAgent(api_key=api_key)
 
 # Sidebar
 with st.sidebar:
@@ -150,6 +232,16 @@ if page == "📡 Live Stream":
                                     if nar.get("alert_level") in ["High", "Critical"]:
                                         st.error(f"**{nar.get('alert_type')}**")
                                     st.write(nar.get("summary"))
+                                    
+                                    # 3. Watchdog Assessment
+                                    watchdog = load_watchdog(nim_key)
+                                    risk = watchdog.assess_threat(dets, [n for _, n in faces], nar.get("summary", ""))
+                                    
+                                    st.divider()
+                                    col_risk, col_act = st.columns([1, 2])
+                                    col_risk.metric("Threat Score", f"{risk['score']}%", delta=risk['level'], delta_color="inverse")
+                                    col_act.warning(f"**Action:** {risk['action']}")
+                                    
                                 last_vlm_t = curr_t
                     
                     if st.session_state.capturing_remaining > 0 and curr_t - last_cap_t > 0.3:
@@ -186,7 +278,7 @@ elif page == "🔍 General Detection":
     uploaded_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
     if uploaded_file:
         img = Image.open(uploaded_file); img_np = np.array(img); img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-        col1, col2 = st.columns([2, 1]); col1.image(img, use_container_width=True)
+        col1, col2 = st.columns([2, 1]); col1.image(img, use_column_width=True)
         if st.button("🚀 Run Analysis"):
             model = load_yolo(); res = model.predict(img_np, conf=0.15); res_p = res[0].plot()
             eng = load_face_engine(); faces = eng.identify(img_bgr)
@@ -195,7 +287,7 @@ elif page == "🔍 General Detection":
                 t, r, b, l = loc
                 cv2.rectangle(res_p, (l, t), (r, b), (139, 0, 255), 3)
                 cv2.putText(res_p, f"ID: {name}", (l, b + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (139, 0, 255), 2)
-            col1.image(cv2.cvtColor(res_p, cv2.COLOR_BGR2RGB), use_container_width=True)
+            col1.image(cv2.cvtColor(res_p, cv2.COLOR_BGR2RGB), use_column_width=True)
             with col2:
                 for _, n in faces: st.success(f"ID: {n}")
                 for b in res[0].boxes: st.write(f"- {model.names[int(b.cls[0])]} ({float(b.conf[0]):.2f})")
@@ -217,6 +309,18 @@ elif page == "🔍 General Detection":
                         st.success("✅ Secure: Low Severity")
 
                     st.info(nar.get("summary", "Done"))
+                    
+                    # --- WATCHDOG ASSESSMENT ---
+                    watchdog = load_watchdog(nim_key)
+                    risk = watchdog.assess_threat(d["dets"], d["ids"], nar.get("summary", ""))
+                    
+                    with st.container(border=True):
+                        st.markdown(f"### 🛡️ Watchdog Assessment: {risk['level']}")
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Risk Score", f"{risk['score']}%")
+                        c2.write(f"**Reason:** {risk['reason']}")
+                        c3.write(f"**Recommended Action:** {risk['action']}")
+
                     with st.expander("View Full Report"):
                         st.json(nar)
 
@@ -246,10 +350,13 @@ elif page == "🎬 Video Analysis":
                         cv2.rectangle(res_p, (l, t), (r, b), (139, 0, 255), 3)
                         cv2.putText(res_p, f"ID: {name}", (l, b + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (139, 0, 255), 2)
                     with results_cont:
-                        st.markdown(f"#### 🚩 {fno/fps:.1f}s - {nar.get('action', 'Activity')}")
-                        c1, c2 = st.columns([2, 1])
-                        c1.image(cv2.cvtColor(res_p, cv2.COLOR_BGR2RGB), use_container_width=True)
-                        with c2: st.write(f"**AI Insight:** {nar.get('summary', '')}")
+                        with st.container():
+                            st.markdown(f"#### 🚩 {fno/fps:.1f}s - {nar.get('action', 'Activity')}")
+                            c1, c2 = st.columns([2, 1])
+                            c1.image(cv2.cvtColor(res_p, cv2.COLOR_BGR2RGB), use_column_width=True)
+                            with c2: 
+                                st.write(f"**AI Insight:**")
+                                st.info(nar.get('summary', ''))
                 progress.progress(fno / total)
             cap.release(); st.success("Done!")
 
@@ -258,13 +365,13 @@ elif page == "👤 Biometrics":
     st.title("Face ID")
     u_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
     if u_file:
-        img = Image.open(u_file); img_np = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR); st.image(img, use_container_width=True)
+        img = Image.open(u_file); img_np = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR); st.image(img, use_column_width=True)
         if st.button("👤 Identify"):
             eng = load_face_engine(); faces = eng.identify(img_np)
             for loc, name in faces:
                 t, r, b, l = loc; cv2.rectangle(img_np, (l, t), (r, b), (0, 255, 0), 2)
                 cv2.putText(img_np, name, (l, t - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-            st.image(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB), use_container_width=True)
+            st.image(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB), use_column_width=True)
 
 # --- PAGE: KNOWN FACES ---
 elif page == "📁 Known Faces":
@@ -281,7 +388,7 @@ elif page == "📁 Known Faces":
             st.success("Updated!"); st.cache_resource.clear(); st.rerun()
     if os.path.exists("data/known_faces"):
         for p in [d for d in os.listdir("data/known_faces") if os.path.isdir(os.path.join("data/known_faces", d))]:
-            with st.container():
+            with st.container(border=True):
                 c1, c2 = st.columns([5, 1]); c1.markdown(f"#### 👤 {p}")
                 if c2.button(f"🗑️", key=f"df_{p}"):
                     shutil.rmtree(os.path.join("data/known_faces", p)); st.cache_resource.clear(); st.rerun()
@@ -290,6 +397,6 @@ elif page == "📁 Known Faces":
                     cols = st.columns(6)
                     for i, f in enumerate(imgs):
                         with cols[i % 6]:
-                            st.image(os.path.join(p_dir, f), use_container_width=True)
+                            st.image(os.path.join(p_dir, f), use_column_width=True)
                             if st.button("x", key=f"di_{p}_{f}"): os.remove(os.path.join(p_dir, f)); st.cache_resource.clear(); st.rerun()
                 st.divider()
