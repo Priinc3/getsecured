@@ -146,10 +146,10 @@ with st.sidebar:
         nim_key = None
     elif vlm_provider == "groq":
         vlm_model = st.text_input("Groq Model", value="meta-llama/llama-4-scout-17b-16e-instruct")
-        nim_key = st.text_input("Groq API Key", type="password", value="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")
+        nim_key = st.text_input("Groq API Key", type="password", value="key")
     else:
         vlm_model = st.text_input("NIM Model", value="nvidia/llama-3.2-nv-vision-70b-v1")
-        nim_key = st.text_input("NVIDIA API Key", type="password", value="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")
+        nim_key = st.text_input("NVIDIA API Key", type="password", value="key")
     
     st.divider()
     if st.button("🔄 Refresh Models"):
