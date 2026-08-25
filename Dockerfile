@@ -7,7 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# ponytail: CPU-only torch first so ultralytics doesn't drag 7GB of CUDA wheels into a 512MB-RAM build
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# ponytail: serial dlib compile — parallel make OOM-kills small builders
+RUN CMAKE_BUILD_PARALLEL_LEVEL=1 pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
