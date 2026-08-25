@@ -5,6 +5,10 @@ Format: [YYYY-MM-DD] | [vX.X.X] | [Type: Added/Fixed/Changed/Removed]
 ---
 
 ## [Unreleased]
+- Deployed to Render (`cctv-investigator`, Docker runtime, free plan) — live at https://cctv.princeprojects.in
+- Hostinger DNS: added CNAME `cctv` → `cctv-investigator.onrender.com`
+- Dockerfile: CPU-only torch installed before ultralytics, serial dlib compile — fixes OOM build failures on small builders
+- Streamlit binds to `$PORT` (Render compat), falls back to 7860
 - Added `Dockerfile` (python:3.11-slim + cmake/dlib build deps) and `.dockerignore` for Hugging Face Spaces Docker SDK deployment, port 7860
 - Added `README.md` with HF Space metadata (`sdk: docker`, `app_port: 7860`)
 - Removed `chromadb`, `sentence-transformers`, `langgraph` from requirements.txt (unused, no imports anywhere)

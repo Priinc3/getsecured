@@ -41,9 +41,10 @@
 | GROQ_API_KEY| Key for Llama-4-Scout narrative generation | Yes (for Cloud) |
 
 ## Deployment
-- Target: Hugging Face Spaces, Docker SDK, free CPU tier (16 GB RAM)
-- `Dockerfile` at repo root: python:3.11-slim + cmake/build-essential (dlib), serves `src/app.py` on port 7860
-- `README.md` carries HF Space metadata (`sdk: docker`, `app_port: 7860`)
+- Live: https://cctv.princeprojects.in (CNAME → `cctv-investigator.onrender.com`)
+- Platform: Render web service `srv-da6ra1rbc2fs73ela7m0` (name: cctv-investigator), Docker runtime, autoDeploy on push to main
+- Free plan caveats: sleeps after ~15 min idle (~1 min cold start), 512 MB RAM — watch for OOM when models load; upgrade plan in Render dashboard if it crash-loops
+- `Dockerfile`: python:3.11-slim, CPU-only torch layer first, serial dlib build (parallel compile OOM-kills small builders), serves on `$PORT` (7860 default)
 - YOLO weights auto-download (`yolov8m-worldv2.pt`) on first boot; `*.pt` stays git-ignored
 - Live Stream webcam page does not work in the cloud (server-side `cv2.VideoCapture(0)` has no camera); image/video upload pages do
 - Use the Groq provider in the cloud; local Ollama is not available in the container
