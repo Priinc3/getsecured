@@ -40,6 +40,14 @@
 | OLLAMA_HOST | URL for local Ollama instance (default: localhost:11434) | No |
 | GROQ_API_KEY| Key for Llama-4-Scout narrative generation | Yes (for Cloud) |
 
+## Deployment
+- Target: Hugging Face Spaces, Docker SDK, free CPU tier (16 GB RAM)
+- `Dockerfile` at repo root: python:3.11-slim + cmake/build-essential (dlib), serves `src/app.py` on port 7860
+- `README.md` carries HF Space metadata (`sdk: docker`, `app_port: 7860`)
+- YOLO weights auto-download (`yolov8m-worldv2.pt`) on first boot; `*.pt` stays git-ignored
+- Live Stream webcam page does not work in the cloud (server-side `cv2.VideoCapture(0)` has no camera); image/video upload pages do
+- Use the Groq provider in the cloud; local Ollama is not available in the container
+
 ## Known Issues
 - Environment: Requires `numpy<2.0` for pandas compatibility.
 

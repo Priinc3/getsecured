@@ -3,8 +3,5 @@ ultralytics
 opencv-python==4.9.0.80
 face_recognition
 ollama
-chromadb
-sentence-transformers
-langgraph
 groq
 numpy==1.26.4

@@ -5,6 +5,9 @@ Format: [YYYY-MM-DD] | [vX.X.X] | [Type: Added/Fixed/Changed/Removed]
 ---
 
 ## [Unreleased]
+- Added `Dockerfile` (python:3.11-slim + cmake/dlib build deps) and `.dockerignore` for Hugging Face Spaces Docker SDK deployment, port 7860
+- Added `README.md` with HF Space metadata (`sdk: docker`, `app_port: 7860`)
+- Removed `chromadb`, `sentence-transformers`, `langgraph` from requirements.txt (unused, no imports anywhere)
 - Created `src/face_engine.py` for biometric identity matching
 - Implemented `FaceEngine` class with automated indexing of `data/known_faces/`
 - Created project directory structure (`src`, `data`, `models`)

@@ -1,0 +1,8 @@
+venv/
+.git/
+__pycache__/
+**/__pycache__/
+runs/
+data/videos/
+*.pt
+.DS_Store
