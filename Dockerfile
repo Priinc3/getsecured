@@ -15,7 +15,7 @@ RUN CMAKE_BUILD_PARALLEL_LEVEL=1 pip install --no-cache-dir -r requirements.txt
 
 # ponytail: bake custom classes into the .pt at build so runtime skips set_classes -> no CLIP import, ~300MB less RAM
 RUN pip install --no-cache-dir git+https://github.com/openai/CLIP.git
-RUN python -c "\
+RUN mkdir -p models && python -c "\
 from ultralytics import YOLOWorld; \
 m = YOLOWorld('yolov8m-worldv2.pt'); \
 m.set_classes(['face', 'car', 'bicycle', 'motorcycle', 'person', 'cell phone', 'laptop', 'knife', 'gun']); \
