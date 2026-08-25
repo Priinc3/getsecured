@@ -5,6 +5,7 @@ Format: [YYYY-MM-DD] | [vX.X.X] | [Type: Added/Fixed/Changed/Removed]
 ---
 
 ## [Unreleased]
+- Dockerfile: added git to apt deps; `mkdir -p models` before baking — bake step now passes end-to-end
 - Fixed live-server errors: bake `custom_yolo_world.pt` at Docker build (runtime no longer needs CLIP for `set_classes`); migrated 6x `use_column_width` → `use_container_width` in app.py
 - Deployed to Render (`cctv-investigator`, Docker runtime, free plan) — live at https://cctv.princeprojects.in
 - Hostinger DNS: added CNAME `cctv` → `cctv-investigator.onrender.com`
