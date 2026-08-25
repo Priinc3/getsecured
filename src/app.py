@@ -278,7 +278,7 @@ elif page == "🔍 General Detection":
     uploaded_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
     if uploaded_file:
         img = Image.open(uploaded_file); img_np = np.array(img); img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-        col1, col2 = st.columns([2, 1]); col1.image(img, use_column_width=True)
+        col1, col2 = st.columns([2, 1]); col1.image(img, use_container_width=True)
         if st.button("🚀 Run Analysis"):
             model = load_yolo(); res = model.predict(img_np, conf=0.15); res_p = res[0].plot()
             eng = load_face_engine(); faces = eng.identify(img_bgr)
@@ -287,7 +287,7 @@ elif page == "🔍 General Detection":
                 t, r, b, l = loc
                 cv2.rectangle(res_p, (l, t), (r, b), (139, 0, 255), 3)
                 cv2.putText(res_p, f"ID: {name}", (l, b + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (139, 0, 255), 2)
-            col1.image(cv2.cvtColor(res_p, cv2.COLOR_BGR2RGB), use_column_width=True)
+            col1.image(cv2.cvtColor(res_p, cv2.COLOR_BGR2RGB), use_container_width=True)
             with col2:
                 for _, n in faces: st.success(f"ID: {n}")
                 for b in res[0].boxes: st.write(f"- {model.names[int(b.cls[0])]} ({float(b.conf[0]):.2f})")
@@ -353,7 +353,7 @@ elif page == "🎬 Video Analysis":
                         with st.container():
                             st.markdown(f"#### 🚩 {fno/fps:.1f}s - {nar.get('action', 'Activity')}")
                             c1, c2 = st.columns([2, 1])
-                            c1.image(cv2.cvtColor(res_p, cv2.COLOR_BGR2RGB), use_column_width=True)
+                            c1.image(cv2.cvtColor(res_p, cv2.COLOR_BGR2RGB), use_container_width=True)
                             with c2: 
                                 st.write(f"**AI Insight:**")
                                 st.info(nar.get('summary', ''))
@@ -365,13 +365,13 @@ elif page == "👤 Biometrics":
     st.title("Face ID")
     u_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
     if u_file:
-        img = Image.open(u_file); img_np = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR); st.image(img, use_column_width=True)
+        img = Image.open(u_file); img_np = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR); st.image(img, use_container_width=True)
         if st.button("👤 Identify"):
             eng = load_face_engine(); faces = eng.identify(img_np)
             for loc, name in faces:
                 t, r, b, l = loc; cv2.rectangle(img_np, (l, t), (r, b), (0, 255, 0), 2)
                 cv2.putText(img_np, name, (l, t - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-            st.image(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB), use_column_width=True)
+            st.image(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB), use_container_width=True)
 
 # --- PAGE: KNOWN FACES ---
 elif page == "📁 Known Faces":
@@ -397,6 +397,6 @@ elif page == "📁 Known Faces":
                     cols = st.columns(6)
                     for i, f in enumerate(imgs):
                         with cols[i % 6]:
-                            st.image(os.path.join(p_dir, f), use_column_width=True)
+                            st.image(os.path.join(p_dir, f), use_container_width=True)
                             if st.button("x", key=f"di_{p}_{f}"): os.remove(os.path.join(p_dir, f)); st.cache_resource.clear(); st.rerun()
                 st.divider()
